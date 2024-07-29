@@ -1,0 +1,40 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+# Sample data
+# Strikes for different maturities
+strike_prices = np.array([80, 90, 100, 110, 120])
+
+# Implied volatilities for each strike and maturity
+# Each row represents a different maturity
+implied_vols = np.array([
+    [0.25, 0.22, 0.20, 0.22, 0.25],  # Maturity 1
+    [0.24, 0.21, 0.19, 0.21, 0.24],  # Maturity 2
+    [0.23, 0.20, 0.18, 0.20, 0.23],  # Maturity 3
+    [0.22, 0.19, 0.17, 0.19, 0.22]   # Maturity 4
+])
+
+# Maturities
+maturities = np.array([1, 2, 3, 4])
+
+# Create a meshgrid for strikes and maturities
+strikes_mesh, maturities_mesh = np.meshgrid(strike_prices, maturities)
+
+# Create the figure and 3D axis
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
+# Plot the surface
+surf = ax.plot_surface(strikes_mesh, maturities_mesh, implied_vols, cmap='viridis')
+
+# Add labels
+ax.set_xlabel('Strike Prices')
+ax.set_ylabel('Maturities')
+ax.set_zlabel('Implied Volatility')
+
+# Add a color bar
+fig.colorbar(surf, ax=ax, shrink=0.5, aspect=5)
+
+# Show plot
+plt.show()
