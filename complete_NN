@@ -3,13 +3,14 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 from keras.models import load_model
 import os
+import pandas as pd
 
 # Load the initial setup
 wd = os.getcwd()
 
 # Load contract grid:
-logMoneyness = pd.read_csv(os.path.join(wd, 'data', 'logMoneyness.txt'), delimiter=",", header=None).values
-expiries = pd.read_csv(os.path.join(wd, 'data', 'expiries.txt'), delimiter=",", header=None).values
+logMoneyness = pd.read_csv(os.path.join(wd, 'data', 'logMoneyness.txt'), delimiter=",", header=None).values.flatten()
+expiries = pd.read_csv(os.path.join(wd, 'data', 'expiries.txt'), delimiter=",", header=None).values.flatten()
 
 # Set useful parameters
 nIn = 7
@@ -64,19 +65,14 @@ model = load_model(os.path.join(wd, 'data', 'neural_network_weights', 'rbergomi'
 def xinversetransform(x):
     return scale_y.inverse_transform(x)
 
-# Compute Implied vol relative errors on Test set
-S0 = 1.
-strikes_dim = len(logMoneyness)
-maturities_dim = len(expiries)
-strikeslabel = np.round(np.linspace(logMoneyness[0], logMoneyness[-1], 8), 1)
-maturitieslabel = np.array([0.1, 0.2, 0.6, 1.5, 1.8])  # Adjust according to your actual maturities
-
 # Make predictions using the trained neural network
-prediction = np.array([xinversetransform(model.predict(np.expand_dims(y_sample, axis=0))) for y_sample in y_valid_mod])
+prediction = xinversetransform(model.predict(x_valid_mod))
 
 # Compute and plot relative errors
+strikes_dim = 25  # Assuming 25 strikes per expiry based on the provided data
+maturities_dim = 7  # Assuming 7 maturities based on the provided data
+
 X_sample = y_valid  # True implied volatilities
-y_sample = y_valid_mod  # Normalized test data
 
 plt.figure(1, figsize=(14, 4))
 
@@ -86,11 +82,11 @@ err = np.mean(100 * np.abs((X_sample - prediction) / X_sample), axis=0)
 plt.title("Average relative error", fontsize=15, y=1.04)
 plt.imshow(err.reshape(maturities_dim, strikes_dim))
 plt.colorbar(format=mtick.PercentFormatter())
-ax.set_xticks(np.linspace(0, len(logMoneyness) - 1, len(logMoneyness)))
-ax.set_xticklabels(logMoneyness)
-ax.set_yticks(np.linspace(0, len(expiries) - 1, len(expiries)))
-ax.set_yticklabels(expiries)
-plt.xlabel("Strike", fontsize=15, labelpad=5)
+ax.set_xticks(np.linspace(0, strikes_dim - 1, strikes_dim))
+ax.set_xticklabels(np.round(logMoneyness[:strikes_dim], 2))
+ax.set_yticks(np.linspace(0, maturities_dim - 1, maturities_dim))
+ax.set_yticklabels(np.round(expiries[:maturities_dim], 3))
+plt.xlabel("Log-Moneyness", fontsize=15, labelpad=5)
 plt.ylabel("Maturity", fontsize=15, labelpad=5)
 
 # Std relative error
@@ -99,11 +95,11 @@ err = 100 * np.std(np.abs((X_sample - prediction) / X_sample), axis=0)
 plt.title("Std relative error", fontsize=15, y=1.04)
 plt.imshow(err.reshape(maturities_dim, strikes_dim))
 plt.colorbar(format=mtick.PercentFormatter())
-ax.set_xticks(np.linspace(0, len(logMoneyness) - 1, len(logMoneyness)))
-ax.set_xticklabels(logMoneyness)
-ax.set_yticks(np.linspace(0, len(expiries) - 1, len(expiries)))
-ax.set_yticklabels(expiries)
-plt.xlabel("Strike", fontsize=15, labelpad=5)
+ax.set_xticks(np.linspace(0, strikes_dim - 1, strikes_dim))
+ax.set_xticklabels(np.round(logMoneyness[:strikes_dim], 2))
+ax.set_yticks(np.linspace(0, maturities_dim - 1, maturities_dim))
+ax.set_yticklabels(np.round(expiries[:maturities_dim], 3))
+plt.xlabel("Log-Moneyness", fontsize=15, labelpad=5)
 plt.ylabel("Maturity", fontsize=15, labelpad=5)
 
 # Maximum relative error
@@ -112,14 +108,15 @@ err = 100 * np.max(np.abs((X_sample - prediction) / X_sample), axis=0)
 plt.title("Maximum relative error", fontsize=15, y=1.04)
 plt.imshow(err.reshape(maturities_dim, strikes_dim))
 plt.colorbar(format=mtick.PercentFormatter())
-ax.set_xticks(np.linspace(0, len(logMoneyness) - 1, len(logMoneyness)))
-ax.set_xticklabels(logMoneyness)
-ax.set_yticks(np.linspace(0, len(expiries) - 1, len(expiries)))
-ax.set_yticklabels(expiries)
-plt.xlabel("Strike", fontsize=15, labelpad=5)
+ax.set_xticks(np.linspace(0, strikes_dim - 1, strikes_dim))
+ax.set_xticklabels(np.round(logMoneyness[:strikes_dim], 2))
+ax.set_yticks(np.linspace(0, maturities_dim - 1, maturities_dim))
+ax.set_yticklabels(np.round(expiries[:maturities_dim], 3))
+plt.xlabel("Log-Moneyness", fontsize=15, labelpad=5)
 plt.ylabel("Maturity", fontsize=15, labelpad=5)
 
 # Adjust layout to prevent overlap and save the plot
 plt.tight_layout()
 plt.savefig('rBergomiTermStructureNNErrors.PNG', dpi=300)
 plt.show()
+
