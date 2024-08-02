@@ -5,6 +5,7 @@ from keras.models import load_model
 import keras.backend as K
 import os
 import pandas as pd
+import matplotlib.pyplot as plt
 
 # Load the initial setup
 wd = os.getcwd()
@@ -35,7 +36,7 @@ def CostFunc(x, sample_ind, x_test_transform):
 
 # Jacobian
 def Jacobian(x, sample_ind, x_test_transform):
-    return 2 * np.sum((NeuralNetwork(x) - x_test_transform[sample_ind]) * NeuralNetworkGradient(x), axis=0)
+    return 2 * (NeuralNetwork(x) - x_test_transform[sample_ind]) * NeuralNetworkGradient(x)
 
 # Cost Function for Levenberg-Marquardt
 def CostFuncLS(x, sample_ind, x_test_transform):
@@ -80,9 +81,9 @@ y_valid_mod = scale_y.fit_transform(y_valid)
 # Optimization setup
 CalibratedParameters = []
 Timing = []
-solutions = np.zeros([4, 11])  # Adjust the size as necessary
+solutions = np.zeros([4, 7])  # Adjusted size to match input shape
 times = np.zeros(4)
-init = np.zeros(11)  # Initial guess
+init = np.zeros(7)  # Initial guess adjusted to match input shape
 
 # Run optimization for 5000 iterations
 for i in range(5000):
@@ -90,33 +91,45 @@ for i in range(5000):
     print(disp, end="\r")
 
     # L-BFGS-B
-    start = time.clock()
+    start = time.process_time()
     I = scipy.optimize.minimize(CostFunc, x0=init, args=(i, y_valid_mod), method='L-BFGS-B', jac=Jacobian, tol=1E-10, options={"maxiter":5000})
-    end = time.clock()
+    end = time.process_time()
     solutions[0, :] = myinverse(I.x)
     times[0] = end - start
 
     # SLSQP
-    start = time.clock()
+    start = time.process_time()
     I = scipy.optimize.minimize(CostFunc, x0=init, args=(i, y_valid_mod), method='SLSQP', jac=Jacobian, tol=1E-10, options={"maxiter":5000})
-    end = time.clock()
+    end = time.process_time()
     solutions[1, :] = myinverse(I.x)
     times[1] = end - start
 
     # BFGS
-    start = time.clock()
+    start = time.process_time()
     I = scipy.optimize.minimize(CostFunc, x0=init, args=(i, y_valid_mod), method='BFGS', jac=Jacobian, tol=1E-10, options={"maxiter":5000})
-    end = time.clock()
+    end = time.process_time()
     solutions[2, :] = myinverse(I.x)
     times[2] = end - start
 
     # Levenberg-Marquardt
-    start = time.clock()
+    start = time.process_time()
     I = scipy.optimize.least_squares(CostFuncLS, init, JacobianLS, args=(i, y_valid_mod), gtol=1E-10)
-    end = time.clock()
+    end = time.process_time()
     solutions[3, :] = myinverse(I.x)
     times[3] = end - start
 
     CalibratedParameters.append(np.copy(solutions))
     Timing.append(np.copy(times))
+
+# Convert Timing to a NumPy array for easier processing
+Timing = np.array(Timing)
+
+# Plotting the average calibration time
+methods = ["L-BFGS-B", "SLSQP", "BFGS", "Levenberg-Marquardt"]
+plt.figure(1, figsize=(12, 6))
+plt.bar(methods, np.mean(Timing, axis=0) * 1000)
+plt.title("Gradient Method Average Calibration Time", fontsize=25)
+plt.ylabel("Milliseconds", fontsize=20)
+plt.tick_params(axis='both', which='major', labelsize=14)
+plt.show()
 
