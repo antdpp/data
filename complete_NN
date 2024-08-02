@@ -1,10 +1,16 @@
-# Load contract grid:
+# Assuming expiries and logMoneyness are loaded as follows
 logMoneyness = pd.read_csv(os.path.join(wd, 'data', 'logMoneyness.txt'), delimiter=",", header=None).values.flatten()
 expiries = pd.read_csv(os.path.join(wd, 'data', 'expiries.txt'), delimiter=",", header=None).values.flatten()
 
+# Ensure the expiries and logMoneyness are correctly printed
 print("Expiries:", expiries)
+print("LogMoneyness:", logMoneyness)
 
+# Define the dimensions
+strikes_dim = len(np.unique(logMoneyness))
+maturities_dim = len(np.unique(expiries))
 
+# Plotting
 plt.figure(1, figsize=(24, 12))  # Increase the figsize to make the subplots larger
 
 # Average relative error
@@ -15,9 +21,9 @@ im = plt.imshow(err.reshape(maturities_dim, strikes_dim).T, aspect='auto')
 cbar = plt.colorbar(im, format=mtick.PercentFormatter())
 cbar.ax.tick_params(labelsize=12)
 ax.set_xticks(np.arange(maturities_dim))
-ax.set_xticklabels([f"{x:.3f}" for x in expiries[:maturities_dim]])
+ax.set_xticklabels([f"{x:.3f}" for x in np.unique(expiries)])
 ax.set_yticks(np.arange(strikes_dim))
-ax.set_yticklabels([f"{x:.3f}" for x in logMoneyness[:strikes_dim]])
+ax.set_yticklabels([f"{x:.4f}" for x in np.unique(logMoneyness)])
 plt.xlabel("Maturity", fontsize=15, labelpad=5)
 plt.ylabel("Log-Moneyness", fontsize=15, labelpad=5)
 
@@ -29,9 +35,9 @@ im = plt.imshow(err.reshape(maturities_dim, strikes_dim).T, aspect='auto')
 cbar = plt.colorbar(im, format=mtick.PercentFormatter())
 cbar.ax.tick_params(labelsize=12)
 ax.set_xticks(np.arange(maturities_dim))
-ax.set_xticklabels([f"{x:.3f}" for x in expiries[:maturities_dim]])
+ax.set_xticklabels([f"{x:.3f}" for x in np.unique(expiries)])
 ax.set_yticks(np.arange(strikes_dim))
-ax.set_yticklabels([f"{x:.3f}" for x in logMoneyness[:strikes_dim]])
+ax.set_yticklabels([f"{x:.4f}" for x in np.unique(logMoneyness)])
 plt.xlabel("Maturity", fontsize=15, labelpad=5)
 plt.ylabel("Log-Moneyness", fontsize=15, labelpad=5)
 
@@ -43,9 +49,9 @@ im = plt.imshow(err.reshape(maturities_dim, strikes_dim).T, aspect='auto')
 cbar = plt.colorbar(im, format=mtick.PercentFormatter())
 cbar.ax.tick_params(labelsize=12)
 ax.set_xticks(np.arange(maturities_dim))
-ax.set_xticklabels([f"{x:.3f}" for x in expiries[:maturities_dim]])
+ax.set_xticklabels([f"{x:.3f}" for x in np.unique(expiries)])
 ax.set_yticks(np.arange(strikes_dim))
-ax.set_yticklabels([f"{x:.3f}" for x in logMoneyness[:strikes_dim]])
+ax.set_yticklabels([f"{x:.4f}" for x in np.unique(logMoneyness)])
 plt.xlabel("Maturity", fontsize=15, labelpad=5)
 plt.ylabel("Log-Moneyness", fontsize=15, labelpad=5)
 
@@ -54,3 +60,4 @@ plt.tight_layout()
 plt.subplots_adjust(wspace=0.4, hspace=0.4)  # Adjust spacing between subplots
 plt.savefig('rBergomiTermStructureNNErrors.PNG', dpi=300)
 plt.show()
+
