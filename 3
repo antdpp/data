@@ -1,0 +1,185 @@
+import numpy as np
+import time
+import scipy.optimize
+from keras.models import load_model
+import tensorflow as tf
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
+
+# Set up TensorFlow session for Keras
+tf.compat.v1.disable_eager_execution()
+session = tf.compat.v1.Session()
+tf.compat.v1.keras.backend.set_session(session)
+
+# Load the initial setup
+wd = os.getcwd()
+
+# Load contract grid:
+logMoneyness = pd.read_csv(os.path.join(wd, 'data', 'logMoneyness.txt'), delimiter=",", header=None).values.flatten()
+expiries = pd.read_csv(os.path.join(wd, 'data', 'expiries.txt'), delimiter=",", header=None).values.flatten()
+
+# Load the trained neural network model
+model = load_model(os.path.join(wd, 'data', 'neural_network_weights', 'rbergomi', 'rbergomi_model_1.h5'),
+                   custom_objects={'root_mean_squared_error': root_mean_squared_error})
+
+# Define the neural network model and gradient function
+def NeuralNetwork(x):
+    x = np.expand_dims(x, axis=0)
+    return model.predict(x).flatten()
+
+def NeuralNetworkGradient(x):
+    x = np.expand_dims(x, axis=0)
+    with session.graph.as_default():
+        grads = tf.gradients(model.output, model.input)
+        gradient_function = tf.compat.v1.keras.backend.function([model.input], grads)
+        return np.array(gradient_function([x])).flatten()
+
+# Cost function
+def CostFunc(x, sample_ind, x_test_transform):
+    return np.sum(np.power((NeuralNetwork(x) - x_test_transform[sample_ind]), 2))
+
+# Jacobian
+def Jacobian(x, sample_ind, x_test_transform):
+    return 2 * (NeuralNetwork(x) - x_test_transform[sample_ind]) * NeuralNetworkGradient(x)
+
+# Cost Function for Levenberg-Marquardt
+def CostFuncLS(x, sample_ind, x_test_transform):
+    return NeuralNetwork(x) - x_test_transform[sample_ind]
+
+# Jacobian for Levenberg-Marquardt
+def JacobianLS(x, sample_ind):
+    return NeuralNetworkGradient(x).T
+
+# Load and normalize the test data
+data_test = pd.read_csv(os.path.join(wd, 'data', 'training_and_test_data', 'rbergomi', 'rbergomi_test_data_1.csv'), delimiter=",").values
+x_valid = data_test[:, :7]  # nIn is 7
+y_valid = data_test[:, 7:7 + 175]  # nOut is 175
+data_test = None
+
+# Normalize input data
+tmp1 = np.reshape(np.array([0.50, 3.50, 0.00]), (1, 3))
+tmp2 = np.reshape(np.array([0.00, 0.75, -1.00]), (1, 3))
+ub = np.concatenate((tmp1, np.tile(1, (1, 4))), 1)  # nXi is 4
+lb = np.concatenate((tmp2, np.tile(0.0025, (1, 4))), 1)
+
+def myscale(x):
+    res = np.zeros(7)
+    for i in range(7):
+        res[i] = (x[i] - (ub[0, i] + lb[0, i]) * 0.5) * 2 / (ub[0, i] - lb[0, i])
+    return res
+
+def myinverse(x):
+    res = np.zeros(7)
+    for i in range(7):
+        res[i] = x[i] * (ub[0, i] - lb[0, i]) * 0.5 + (ub[0, i] + lb[0, i]) * 0.5
+    return res
+
+# Scale inputs
+x_valid_mod = np.array([myscale(x) for x in x_valid])
+
+# Scale and normalize output
+from sklearn.preprocessing import StandardScaler
+scale_y = StandardScaler()
+y_valid_mod = scale_y.fit_transform(y_valid)
+
+# Optimization setup
+CalibratedParameters = []
+Timing = []
+solutions = np.zeros([4, 7])  # Adjusted size to match input shape
+times = np.zeros(4)
+init = np.zeros(7)  # Initial guess adjusted to match input shape
+
+# Run optimization for 5000 iterations
+for i in range(5000):
+    disp = f"{i + 1}/5000"
+    print(disp, end="\r")
+
+    # L-BFGS-B
+    start = time.process_time()
+    I = scipy.optimize.minimize(CostFunc, x0=init, args=(i, y_valid_mod), method='L-BFGS-B', jac=Jacobian, tol=1E-10, options={"maxiter":5000})
+    end = time.process_time()
+    solutions[0, :] = myinverse(I.x)
+    times[0] = end - start
+
+    # SLSQP
+    start = time.process_time()
+    I = scipy.optimize.minimize(CostFunc, x0=init, args=(i, y_valid_mod), method='SLSQP', jac=Jacobian, tol=1E-10, options={"maxiter":5000})
+    end = time.process_time()
+    solutions[1, :] = myinverse(I.x)
+    times[1] = end - start
+
+    # BFGS
+    start = time.process_time()
+    I = scipy.optimize.minimize(CostFunc, x0=init, args=(i, y_valid_mod), method='BFGS', jac=Jacobian, tol=1E-10, options={"maxiter":5000})
+    end = time.process_time()
+    solutions[2, :] = myinverse(I.x)
+    times[2] = end - start
+
+    # Levenberg-Marquardt
+    start = time.process_time()
+    I = scipy.optimize.least_squares(CostFuncLS, init, JacobianLS, args=(i, y_valid_mod), gtol=1E-10)
+    end = time.process_time()
+    solutions[3, :] = myinverse(I.x)
+    times[3] = end - start
+
+    CalibratedParameters.append(np.copy(solutions))
+    Timing.append(np.copy(times))
+
+# Convert Timing to a NumPy array for easier processing
+Timing = np.array(Timing)
+
+# Example data for plotting
+# Ensure you replace this with your actual data
+average = np.random.rand(11, 200)  # Example placeholder
+titles = [f"Title {i+1}" for i in range(11)]  # Example placeholder
+RMSENN = np.random.rand(200)  # Example placeholder
+
+# Plotting the average calibration time
+methods = ["L-BFGS-B", "SLSQP", "BFGS", "Levenberg-Marquardt"]
+plt.figure(1, figsize=(12, 6))
+plt.bar(methods, np.mean(Timing, axis=0) * 1000)
+plt.title("Gradient Method Average Calibration Time", fontsize=25)
+plt.ylabel("Milliseconds", fontsize=20)
+plt.tick_params(axis='both', which='major', labelsize=14)
+plt.show()
+
+# Additional plotting section
+plt.figure(figsize=(18, 5))
+plt.clf()
+plt.subplot(121)
+
+ax = plt.gca()
+q = np.linspace(0, 0.99, 200)
+for u in range(11):
+    p = plt.plot(100 * q, np.quantile(100 * average[u, :], q), label=titles[u])
+    c = p[0].get_color()
+ymin, ymax = ax.get_ylim()
+ax.set_xlim(0, 100)
+plt.plot(100 * np.ones(2) * 0.95, np.array([0, ymax]), '--k', label="95% quantile")
+plt.title("Empirical CDF of parameter relative error", fontsize=20)
+plt.legend(fontsize=12)
+plt.xlabel("quantiles", fontsize=17)
+plt.ylabel("relative error", fontsize=17)
+plt.gca().yaxis.set_major_formatter(mtick.PercentFormatter())
+plt.gca().xaxis.set_major_formatter(mtick.PercentFormatter())
+plt.tick_params(axis='both', which='major', labelsize=17)
+plt.tick_params(axis='both', which='minor', labelsize=17)
+plt.xticks(np.arange(0, 101, step=10))
+plt.grid()
+
+plt.subplot(122)
+ax = plt.gca()
+q = np.linspace(0, 1, 200)
+p = plt.plot(100 * q, np.quantile(100 * RMSENN, q), linewidth=3, label="RMSE")
+ymin, ymax = ax.get_ylim()
+plt.plot(100 * np.ones(2) * 0.99, np.array([0, ymax]), '--k', label="99% quantile")
+plt.title("Empirical CDF of implied vol surface RMSE", fontsize=20)
+plt.legend(fontsize=17)
+plt.xlabel("quantiles", fontsize=17)
+plt.ylabel("RMSE", fontsize=17)
+plt.gca().yaxis.set_major_formatter(mtick.PercentFormatter())
+plt.gca().xaxis.set_major_formatter(mtick.PercentFormatter())
+plt.tick_params(axis='both', which='major', labelsize=17)
+plt.tick
