@@ -12,8 +12,12 @@ wd = os.getcwd()
 logMoneyness = pd.read_csv(os.path.join(wd, 'data', 'logMoneyness.txt'), delimiter=",", header=None).values.flatten()
 expiries = pd.read_csv(os.path.join(wd, 'data', 'expiries.txt'), delimiter=",", header=None).values.flatten()
 
-print("Expiries:", expiries)
-print("LogMoneyness:", logMoneyness)
+# Check unique values for dimensions
+unique_expiries = np.unique(expiries)
+unique_logMoneyness = np.unique(logMoneyness)
+
+print("Unique Expiries:", unique_expiries)
+print("Unique LogMoneyness:", unique_logMoneyness)
 
 # Set useful parameters
 nIn = 7
@@ -72,53 +76,30 @@ def xinversetransform(x):
 prediction = xinversetransform(model.predict(x_valid_mod))
 
 # Compute and plot relative errors
-strikes_dim = 25  # Correctly determine the number of strikes
-maturities_dim = 7  # Correctly determine the number of maturities
+strikes_dim = len(unique_logMoneyness)
+maturities_dim = len(unique_expiries)
 
-# Plotting
+# Reshape errors for plotting
+errors = {
+    "Average relative error": np.mean(100 * np.abs((y_valid - prediction) / y_valid), axis=0),
+    "Std relative error": 100 * np.std(np.abs((y_valid - prediction) / y_valid), axis=0),
+    "Maximum relative error": 100 * np.max(np.abs((y_valid - prediction) / y_valid), axis=0)
+}
+
 plt.figure(1, figsize=(24, 12))  # Increase the figsize to make the subplots larger
 
-# Average relative error
-ax = plt.subplot(1, 3, 1)
-err = np.mean(100 * np.abs((X_sample - prediction) / X_sample), axis=0)
-plt.title("Average relative error", fontsize=15, y=1.04)
-im = plt.imshow(err.reshape(maturities_dim, strikes_dim).T, aspect='auto')
-cbar = plt.colorbar(im, format=mtick.PercentFormatter())
-cbar.ax.tick_params(labelsize=12)
-ax.set_xticks(np.arange(maturities_dim))
-ax.set_xticklabels([f"{x:.3f}" for x in np.unique(expiries)])
-ax.set_yticks(np.arange(strikes_dim))
-ax.set_yticklabels([f"{x:.4f}" for x in np.unique(logMoneyness)])
-plt.xlabel("Maturity", fontsize=15, labelpad=5)
-plt.ylabel("Log-Moneyness", fontsize=15, labelpad=5)
-
-# Std relative error
-ax = plt.subplot(1, 3, 2)
-err = 100 * np.std(np.abs((X_sample - prediction) / X_sample), axis=0)
-plt.title("Std relative error", fontsize=15, y=1.04)
-im = plt.imshow(err.reshape(maturities_dim, strikes_dim).T, aspect='auto')
-cbar = plt.colorbar(im, format=mtick.PercentFormatter())
-cbar.ax.tick_params(labelsize=12)
-ax.set_xticks(np.arange(maturities_dim))
-ax.set_xticklabels([f"{x:.3f}" for x in np.unique(expiries)])
-ax.set_yticks(np.arange(strikes_dim))
-ax.set_yticklabels([f"{x:.4f}" for x in np.unique(logMoneyness)])
-plt.xlabel("Maturity", fontsize=15, labelpad=5)
-plt.ylabel("Log-Moneyness", fontsize=15, labelpad=5)
-
-# Maximum relative error
-ax = plt.subplot(1, 3, 3)
-err = 100 * np.max(np.abs((X_sample - prediction) / X_sample), axis=0)
-plt.title("Maximum relative error", fontsize=15, y=1.04)
-im = plt.imshow(err.reshape(maturities_dim, strikes_dim).T, aspect='auto')
-cbar = plt.colorbar(im, format=mtick.PercentFormatter())
-cbar.ax.tick_params(labelsize=12)
-ax.set_xticks(np.arange(maturities_dim))
-ax.set_xticklabels([f"{x:.3f}" for x in np.unique(expiries)])
-ax.set_yticks(np.arange(strikes_dim))
-ax.set_yticklabels([f"{x:.4f}" for x in np.unique(logMoneyness)])
-plt.xlabel("Maturity", fontsize=15, labelpad=5)
-plt.ylabel("Log-Moneyness", fontsize=15, labelpad=5)
+for i, (title, err) in enumerate(errors.items(), start=1):
+    ax = plt.subplot(1, 3, i)
+    plt.title(title, fontsize=15, y=1.04)
+    im = plt.imshow(err.reshape((maturities_dim, strikes_dim)).T, aspect='auto')
+    cbar = plt.colorbar(im, format=mtick.PercentFormatter())
+    cbar.ax.tick_params(labelsize=12)
+    ax.set_xticks(np.arange(maturities_dim))
+    ax.set_xticklabels([f"{x:.3f}" for x in unique_expiries])
+    ax.set_yticks(np.arange(strikes_dim))
+    ax.set_yticklabels([f"{x:.4f}" for x in unique_logMoneyness])
+    plt.xlabel("Maturity", fontsize=15, labelpad=5)
+    plt.ylabel("Log-Moneyness", fontsize=15, labelpad=5)
 
 # Adjust layout to prevent overlap and save the plot
 plt.tight_layout()
