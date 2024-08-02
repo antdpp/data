@@ -1,11 +1,23 @@
 import numpy as np
+import time
+import scipy.optimize
 from keras.models import load_model
 import keras.backend as K
+import os
+import pandas as pd
 
-# Define the neural network model and gradient function
+# Load the initial setup
+wd = os.getcwd()
+
+# Load contract grid:
+logMoneyness = pd.read_csv(os.path.join(wd, 'data', 'logMoneyness.txt'), delimiter=",", header=None).values.flatten()
+expiries = pd.read_csv(os.path.join(wd, 'data', 'expiries.txt'), delimiter=",", header=None).values.flatten()
+
+# Load the trained neural network model
 model = load_model(os.path.join(wd, 'data', 'neural_network_weights', 'rbergomi', 'rbergomi_model_1.h5'),
                    custom_objects={'root_mean_squared_error': root_mean_squared_error})
 
+# Define the neural network model and gradient function
 def NeuralNetwork(x):
     x = np.expand_dims(x, axis=0)
     return model.predict(x).flatten()
@@ -32,3 +44,79 @@ def CostFuncLS(x, sample_ind, x_test_transform):
 # Jacobian for Levenberg-Marquardt
 def JacobianLS(x, sample_ind):
     return NeuralNetworkGradient(x).T
+
+# Load and normalize the test data
+data_test = pd.read_csv(os.path.join(wd, 'data', 'training_and_test_data', 'rbergomi', 'rbergomi_test_data_1.csv'), delimiter=",").values
+x_valid = data_test[:, :7]  # nIn is 7
+y_valid = data_test[:, 7:7 + 175]  # nOut is 175
+data_test = None
+
+# Normalize input data
+tmp1 = np.reshape(np.array([0.50, 3.50, 0.00]), (1, 3))
+tmp2 = np.reshape(np.array([0.00, 0.75, -1.00]), (1, 3))
+ub = np.concatenate((tmp1, np.tile(1, (1, 4))), 1)  # nXi is 4
+lb = np.concatenate((tmp2, np.tile(0.0025, (1, 4))), 1)
+
+def myscale(x):
+    res = np.zeros(7)
+    for i in range(7):
+        res[i] = (x[i] - (ub[0, i] + lb[0, i]) * 0.5) * 2 / (ub[0, i] - lb[0, i])
+    return res
+
+def myinverse(x):
+    res = np.zeros(7)
+    for i in range(7):
+        res[i] = x[i] * (ub[0, i] - lb[0, i]) * 0.5 + (ub[0, i] + lb[0, i]) * 0.5
+    return res
+
+# Scale inputs
+x_valid_mod = np.array([myscale(x) for x in x_valid])
+
+# Scale and normalize output
+from sklearn.preprocessing import StandardScaler
+scale_y = StandardScaler()
+y_valid_mod = scale_y.fit_transform(y_valid)
+
+# Optimization setup
+CalibratedParameters = []
+Timing = []
+solutions = np.zeros([4, 11])  # Adjust the size as necessary
+times = np.zeros(4)
+init = np.zeros(11)  # Initial guess
+
+# Run optimization for 5000 iterations
+for i in range(5000):
+    disp = f"{i + 1}/5000"
+    print(disp, end="\r")
+
+    # L-BFGS-B
+    start = time.clock()
+    I = scipy.optimize.minimize(CostFunc, x0=init, args=(i, y_valid_mod), method='L-BFGS-B', jac=Jacobian, tol=1E-10, options={"maxiter":5000})
+    end = time.clock()
+    solutions[0, :] = myinverse(I.x)
+    times[0] = end - start
+
+    # SLSQP
+    start = time.clock()
+    I = scipy.optimize.minimize(CostFunc, x0=init, args=(i, y_valid_mod), method='SLSQP', jac=Jacobian, tol=1E-10, options={"maxiter":5000})
+    end = time.clock()
+    solutions[1, :] = myinverse(I.x)
+    times[1] = end - start
+
+    # BFGS
+    start = time.clock()
+    I = scipy.optimize.minimize(CostFunc, x0=init, args=(i, y_valid_mod), method='BFGS', jac=Jacobian, tol=1E-10, options={"maxiter":5000})
+    end = time.clock()
+    solutions[2, :] = myinverse(I.x)
+    times[2] = end - start
+
+    # Levenberg-Marquardt
+    start = time.clock()
+    I = scipy.optimize.least_squares(CostFuncLS, init, JacobianLS, args=(i, y_valid_mod), gtol=1E-10)
+    end = time.clock()
+    solutions[3, :] = myinverse(I.x)
+    times[3] = end - start
+
+    CalibratedParameters.append(np.copy(solutions))
+    Timing.append(np.copy(times))
+
