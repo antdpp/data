@@ -7,6 +7,21 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 
+import numpy as np
+import time
+import scipy.optimize
+from keras.models import load_model
+import tensorflow as tf
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Set up TensorFlow session for Keras
+tf.compat.v1.disable_eager_execution()
+session = tf.compat.v1.Session()
+tf.compat.v1.keras.backend.set_session(session)
+
+
 # Load the initial setup
 wd = os.getcwd()
 
