@@ -1,0 +1,125 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
+from keras.models import load_model
+import os
+
+# Load the initial setup
+wd = os.getcwd()
+
+# Load contract grid:
+logMoneyness = pd.read_csv(os.path.join(wd, 'data', 'logMoneyness.txt'), delimiter=",", header=None).values
+expiries = pd.read_csv(os.path.join(wd, 'data', 'expiries.txt'), delimiter=",", header=None).values
+
+# Set useful parameters
+nIn = 7
+nOut = 175
+nXi = 4
+
+# Load training data
+data_train = pd.read_csv(os.path.join(wd, 'data', 'training_and_test_data', 'rbergomi', 'rbergomi_training_data_1.csv'), delimiter=",").values
+x_train = data_train[:, :nIn]
+y_train = data_train[:, nIn:nIn + nOut]
+data_train = None
+
+# Load test data
+data_test = pd.read_csv(os.path.join(wd, 'data', 'training_and_test_data', 'rbergomi', 'rbergomi_test_data_1.csv'), delimiter=",").values
+x_valid = data_test[:, :nIn]
+y_valid = data_test[:, nIn:nIn + nOut]
+data_test = None
+
+# Normalize data
+tmp1 = np.reshape(np.array([0.50, 3.50, 0.00]), (1, 3))
+tmp2 = np.reshape(np.array([0.00, 0.75, -1.00]), (1, 3))
+ub = np.concatenate((tmp1, np.tile(1, (1, nXi))), 1)
+lb = np.concatenate((tmp2, np.tile(0.0025, (1, nXi))), 1)
+
+def myscale(x):
+    res = np.zeros(nIn)
+    for i in range(nIn):
+        res[i] = (x[i] - (ub[0, i] + lb[0, i]) * 0.5) * 2 / (ub[0, i] - lb[0, i])
+    return res
+
+def myinverse(x):
+    res = np.zeros(nIn)
+    for i in range(nIn):
+        res[i] = x[i] * (ub[0, i] - lb[0, i]) * 0.5 + (ub[0, i] + lb[0, i]) * 0.5
+    return res
+
+# Scale inputs
+x_train_mod = np.array([myscale(x) for x in x_train])
+x_valid_mod = np.array([myscale(x) for x in x_valid])
+
+# Scale and normalize output
+from sklearn.preprocessing import StandardScaler
+scale_y = StandardScaler()
+y_train_mod = scale_y.fit_transform(y_train)
+y_valid_mod = scale_y.transform(y_valid)
+
+# Load the trained neural network model
+model = load_model(os.path.join(wd, 'data', 'neural_network_weights', 'rbergomi', 'rbergomi_model_1.h5'),
+                   custom_objects={'root_mean_squared_error': root_mean_squared_error})
+
+# Define inverse transform function
+def xinversetransform(x):
+    return scale_y.inverse_transform(x)
+
+# Compute Implied vol relative errors on Test set
+S0 = 1.
+strikes_dim = len(logMoneyness)
+maturities_dim = len(expiries)
+strikeslabel = np.round(np.linspace(logMoneyness[0], logMoneyness[-1], 8), 1)
+maturitieslabel = np.array([0.1, 0.2, 0.6, 1.5, 1.8])  # Adjust according to your actual maturities
+
+# Make predictions using the trained neural network
+prediction = np.array([xinversetransform(model.predict(np.expand_dims(y_sample, axis=0))) for y_sample in y_valid_mod])
+
+# Compute and plot relative errors
+X_sample = y_valid  # True implied volatilities
+y_sample = y_valid_mod  # Normalized test data
+
+plt.figure(1, figsize=(14, 4))
+
+# Average relative error
+ax = plt.subplot(1, 3, 1)
+err = np.mean(100 * np.abs((X_sample - prediction) / X_sample), axis=0)
+plt.title("Average relative error", fontsize=15, y=1.04)
+plt.imshow(err.reshape(maturities_dim, strikes_dim))
+plt.colorbar(format=mtick.PercentFormatter())
+ax.set_xticks(np.linspace(0, len(logMoneyness) - 1, len(logMoneyness)))
+ax.set_xticklabels(logMoneyness)
+ax.set_yticks(np.linspace(0, len(expiries) - 1, len(expiries)))
+ax.set_yticklabels(expiries)
+plt.xlabel("Strike", fontsize=15, labelpad=5)
+plt.ylabel("Maturity", fontsize=15, labelpad=5)
+
+# Std relative error
+ax = plt.subplot(1, 3, 2)
+err = 100 * np.std(np.abs((X_sample - prediction) / X_sample), axis=0)
+plt.title("Std relative error", fontsize=15, y=1.04)
+plt.imshow(err.reshape(maturities_dim, strikes_dim))
+plt.colorbar(format=mtick.PercentFormatter())
+ax.set_xticks(np.linspace(0, len(logMoneyness) - 1, len(logMoneyness)))
+ax.set_xticklabels(logMoneyness)
+ax.set_yticks(np.linspace(0, len(expiries) - 1, len(expiries)))
+ax.set_yticklabels(expiries)
+plt.xlabel("Strike", fontsize=15, labelpad=5)
+plt.ylabel("Maturity", fontsize=15, labelpad=5)
+
+# Maximum relative error
+ax = plt.subplot(1, 3, 3)
+err = 100 * np.max(np.abs((X_sample - prediction) / X_sample), axis=0)
+plt.title("Maximum relative error", fontsize=15, y=1.04)
+plt.imshow(err.reshape(maturities_dim, strikes_dim))
+plt.colorbar(format=mtick.PercentFormatter())
+ax.set_xticks(np.linspace(0, len(logMoneyness) - 1, len(logMoneyness)))
+ax.set_xticklabels(logMoneyness)
+ax.set_yticks(np.linspace(0, len(expiries) - 1, len(expiries)))
+ax.set_yticklabels(expiries)
+plt.xlabel("Strike", fontsize=15, labelpad=5)
+plt.ylabel("Maturity", fontsize=15, labelpad=5)
+
+# Adjust layout to prevent overlap and save the plot
+plt.tight_layout()
+plt.savefig('rBergomiTermStructureNNErrors.PNG', dpi=300)
+plt.show()
