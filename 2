@@ -1,0 +1,34 @@
+import numpy as np
+from keras.models import load_model
+import keras.backend as K
+
+# Define the neural network model and gradient function
+model = load_model(os.path.join(wd, 'data', 'neural_network_weights', 'rbergomi', 'rbergomi_model_1.h5'),
+                   custom_objects={'root_mean_squared_error': root_mean_squared_error})
+
+def NeuralNetwork(x):
+    x = np.expand_dims(x, axis=0)
+    return model.predict(x).flatten()
+
+def NeuralNetworkGradient(x):
+    x = np.expand_dims(x, axis=0)
+    with K.get_session().graph.as_default():
+        grads = K.gradients(model.output, model.input)
+        gradient_function = K.function([model.input], grads)
+        return np.array(gradient_function([x])).flatten()
+
+# Cost function
+def CostFunc(x, sample_ind, x_test_transform):
+    return np.sum(np.power((NeuralNetwork(x) - x_test_transform[sample_ind]), 2))
+
+# Jacobian
+def Jacobian(x, sample_ind, x_test_transform):
+    return 2 * np.sum((NeuralNetwork(x) - x_test_transform[sample_ind]) * NeuralNetworkGradient(x), axis=0)
+
+# Cost Function for Levenberg-Marquardt
+def CostFuncLS(x, sample_ind, x_test_transform):
+    return NeuralNetwork(x) - x_test_transform[sample_ind]
+
+# Jacobian for Levenberg-Marquardt
+def JacobianLS(x, sample_ind):
+    return NeuralNetworkGradient(x).T
